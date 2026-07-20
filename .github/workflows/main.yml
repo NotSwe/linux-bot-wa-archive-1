@@ -132,8 +132,7 @@ jobs:
           ' || true
 
 
-
-           - name: "7. Auto Backup"
+      - name: "7. Auto Backup"
         if: always()
         run: |
           git config --global user.name "github-actions[bot]"
@@ -160,6 +159,9 @@ jobs:
               echo "Backup berhasil."
               exit 0
             fi
+
+            echo "Pull ulang..."
+            git pull --rebase origin main || true
 
             echo "Push gagal, retry 10 detik..."
             sleep 10
