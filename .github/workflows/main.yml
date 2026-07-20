@@ -60,25 +60,51 @@ jobs:
           npm install
 
 
-      - name: "6. Run Bot (5 Jam + Watchdog)"
+      - name: "6. Prepare"
+        run: |
+          echo "Bot ready"
+
+
+      - name: "7. Run Bot (5 Jam + Watchdog + Monitoring)"
         run: |
           timeout 5h bash -c '
+
+          START=$(date +%s)
 
           while true
           do
 
+            NOW=$(date +%s)
+            UPTIME=$((NOW-START))
+
             echo "================================"
-            echo "BOT ONLINE"
-            echo "TIME: $(date)"
+            echo "       BOT MONITOR"
+            echo "================================"
+            echo "STATUS : ONLINE"
+            echo "UPTIME : ${UPTIME} detik"
+            echo "TIME   : $(date)"
+
+            echo ""
+            echo "RAM:"
+            free -h
+
+            echo ""
+            echo "CPU:"
+            top -bn1 | head -5
+
+            echo ""
+            echo "DISK:"
+            df -h /
+
             echo "================================"
 
 
             npm start
 
 
+            echo ""
             echo "BOT STOPPED"
             echo "RESTART 5 DETIK..."
-
 
             sleep 5
 
@@ -87,30 +113,70 @@ jobs:
           ' || true
 
 
-      - name: "7. Auto Backup Session"
+      - name: "8. Cleanup Log"
         if: always()
         run: |
+          find . -name "*.log" -type f -mtime +7 -delete || true
+
+
+      - name: "9. Auto Backup Session & File"
+        if: always()
+        run: |
+
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add -A
+
           git reset HEAD node_modules 2>/dev/null || true
+
 
           if git diff --cached --quiet
           then
+
             echo "Tidak ada perubahan."
+
           else
+
             git commit -m "Auto backup bot [skip ci]"
+
             git pull --rebase origin main || true
+
             git push origin HEAD:main
+
           fi
 
 
-      - name: "8. Auto Next Cycle"
+      - name: "10. Auto Up Trigger Siklus Berikutnya"
         if: ${{ !cancelled() }}
 
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
         run: |
-          gh workflow run "${{ github.workflow }}" --ref main || true
+
+          MAX_RETRY=20
+          RETRY_DELAY=30
+
+
+          for ((i=1;i<=MAX_RETRY;i++))
+          do
+
+            echo "Trigger cycle $i"
+
+
+            if gh workflow run "${{ github.workflow }}" --ref main
+            then
+
+              echo "Workflow berikutnya berhasil dijalankan"
+              exit 0
+
+            fi
+
+
+            sleep $RETRY_DELAY
+
+          done
+
+
+          exit 1
