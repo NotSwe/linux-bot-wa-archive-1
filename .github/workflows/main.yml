@@ -133,62 +133,40 @@ jobs:
 
 
 
-      - name: "7. Auto Backup Session + Database Only"
+           - name: "7. Auto Backup"
         if: always()
         run: |
-
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
+          echo "Add semua perubahan..."
+          git add -A
 
-          git add \
-          session \
-          sessions \
-          storage \
-          database \
-          db \
-          2>/dev/null || true
+          # Jangan ikut upload dependency
+          git reset HEAD node_modules 2>/dev/null || true
 
+          echo "Commit..."
+          git commit -m "Auto backup [skip ci]" || true
 
+          echo "Sync repository..."
+          git pull --rebase origin main || true
 
-          if git diff --cached --quiet
-          then
+          for i in {1..5}
+          do
+            echo "Push percobaan $i/5"
 
-            echo "Tidak ada perubahan session/database."
+            if git push origin HEAD:main
+            then
+              echo "Backup berhasil."
+              exit 0
+            fi
 
-          else
+            echo "Push gagal, retry 10 detik..."
+            sleep 10
+          done
 
-            echo "Backup session/database..."
-
-
-            git commit -m "Auto backup session database [skip ci]"
-
-
-            for i in {1..5}
-            do
-
-              echo "Push retry $i/5"
-
-
-              if git push origin HEAD:main
-              then
-
-                echo "Backup berhasil"
-                exit 0
-
-              fi
-
-
-              sleep 10
-
-            done
-
-
-            echo "Backup gagal"
-            exit 1
-
-          fi
-
+          echo "Backup gagal."
+          exit 1
 
 
       - name: "8. Auto-Up Trigger Workflow + Retry"
