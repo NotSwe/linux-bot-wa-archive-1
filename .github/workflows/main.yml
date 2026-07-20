@@ -41,7 +41,7 @@ jobs:
             ${{ runner.os }}-node-
 
 
-      - name: "4. Setup VPN Cloudflare WARP"
+      - name: "4. Setup Cloudflare WARP"
         run: |
           curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp.gpg
 
@@ -64,102 +64,51 @@ jobs:
           npm install
 
 
-      - name: "6. Telegram Start Notify"
+      - name: "6. Telegram Start"
         run: |
-          curl -s \
-          "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d text="🟢 BOT STARTED
-Workflow: ${{ github.workflow }}
-Time: $(date)"
+          -d text="🟢 BOT STARTED"
 
 
-      - name: "7. Run Bot (5 Jam + Watchdog)"
+      - name: "7. Run Bot"
         run: |
           timeout 5h bash -c '
           while true
           do
-            echo "Menjalankan Bot..."
-
+            echo "Starting Bot..."
             npm start
 
-            curl -s \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="⚠️ BOT RESTART
-Bot berhenti.
-Watchdog aktif."
-
+            echo "Bot stopped. Restarting..."
             sleep 5
-
           done
           ' || true
 
 
-      - name: "8. Cleanup Log"
+      - name: "8. Backup Session"
         if: always()
         run: |
-          find . -name "*.log" -type f -mtime +7 -delete || true
-
-
-      - name: "9. Auto Backup"
-        if: always()
-        run: |
-
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add -A
-
           git reset HEAD node_modules 2>/dev/null || true
 
           if git diff --cached --quiet
           then
-            echo "Tidak ada perubahan."
-
+            echo "No changes"
           else
-
             git commit -m "Auto backup bot [skip ci]"
-
             git pull --rebase origin main || true
-
             git push origin HEAD:main
-
           fi
 
 
-      - name: "10. Auto Up Next Cycle"
+      - name: "9. Trigger Next Cycle"
         if: ${{ !cancelled() }}
 
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
         run: |
-
-          for ((i=1;i<=20;i++))
-          do
-
-            if gh workflow run "${{ github.workflow }}" --ref main
-            then
-
-              curl -s \
-              "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-              -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-              -d text="🔄 Workflow berikutnya berhasil dijalankan"
-
-              exit 0
-
-            fi
-
-            sleep 30
-
-          done
-
-
-          curl -s \
-          "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-          -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d text="❌ Workflow gagal lanjut"
-
-
-          exit 1
+          gh workflow run "${{ github.workflow }}" --ref main || true
