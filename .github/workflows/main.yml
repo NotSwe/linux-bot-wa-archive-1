@@ -37,14 +37,11 @@ jobs:
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
 
 
       - name: "4. Setup Cloudflare WARP"
         run: |
           curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp.gpg
-
           echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare.list
 
           sudo apt update -q
@@ -53,10 +50,6 @@ jobs:
           warp-cli --accept-tos registration new
           warp-cli --accept-tos mode warp
           warp-cli --accept-tos connect
-
-          sleep 3
-
-          curl -4 ifconfig.me
 
 
       - name: "5. Install Dependencies"
@@ -69,19 +62,47 @@ jobs:
           curl -s \
           "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
           -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d text="🟢 BOT STARTED
+          -d text="🟢 BOT STARTED"
+
+
+      - name: "7. Telegram Status Listener"
+        run: |
+          (
+          OFFSET=0
+
+          while true
+          do
+
+            UPDATE=$(curl -s \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/getUpdates?offset=$OFFSET")
+
+
+            if echo "$UPDATE" | grep -q "/status"; then
+
+              curl -s \
+              "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+              -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+              -d text="🟢 BOT STATUS
+
+Status: ONLINE
 Workflow: ${{ github.workflow }}
+Runner: Ubuntu
 Time: $(date)"
 
+            fi
 
-      - name: "7. Telegram Status Monitor"
-        run: |
-          chmod +x telegram-status.sh
 
-          export TELEGRAM_TOKEN=${{ secrets.TELEGRAM_TOKEN }}
-          export TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+            ID=$(echo "$UPDATE" | grep -o '"update_id":[0-9]*' | tail -1 | cut -d: -f2)
 
-          ./telegram-status.sh &
+            if [ -n "$ID" ]; then
+              OFFSET=$((ID+1))
+            fi
+
+
+            sleep 5
+
+          done
+          ) &
 
 
       - name: "8. Run Bot"
@@ -96,12 +117,9 @@ Time: $(date)"
             curl -s \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="⚠️ BOT RESTART
-Bot berhenti.
-Restart otomatis."
+            -d text="⚠️ BOT RESTART"
 
             sleep 5
-
           done
           ' || true
 
@@ -113,7 +131,6 @@ Restart otomatis."
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add -A
-
           git reset HEAD node_modules 2>/dev/null || true
 
           if git diff --cached --quiet
