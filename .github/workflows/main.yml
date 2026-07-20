@@ -2,8 +2,6 @@ name: RDP-BOT-WA-AUTO-LOOP
 
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [ main ]
 
 concurrency:
   group: rdp-wa-loop
@@ -11,23 +9,29 @@ concurrency:
 
 jobs:
   run-bot:
+
     runs-on: ubuntu-latest
     timeout-minutes: 360
+
     permissions:
       contents: write
       actions: write
 
+
     steps:
+
       - name: "1. Checkout Repository"
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT_TOKEN }}
           fetch-depth: 0
 
+
       - name: "2. Setup Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+
 
       - name: "3. Cache NPM"
         uses: actions/cache@v4
@@ -37,10 +41,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
+
       - name: "4. Setup VPN Cloudflare WARP"
         run: |
-          echo "Install WARP..."
           curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+
           echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
 
           sudo apt-get update -q
@@ -51,69 +56,208 @@ jobs:
           warp-cli --accept-tos connect
 
           sleep 3
+
           echo "IP:"
           curl -4 ifconfig.me
-          echo
+
 
       - name: "5. Install Dependencies"
         run: |
           npm install
 
-      - name: "6. Run Bot (5 Jam)"
+
+      - name: "6. Telegram Monitor + Heartbeat"
         run: |
-          timeout 5h bash -c '
-            while true; do
-              echo "Menjalankan Bot..."
-              npm start
-              echo "Bot berhenti. Restart 5 detik..."
+
+          (
+          OFFSET=0
+
+          while true
+          do
+
+            UPDATE=$(curl -s \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/getUpdates?offset=$OFFSET")
+
+
+            if echo "$UPDATE" | grep -q '"/status"'; then
+
+              MSG="🟢 BOT STATUS
+
+Status: ONLINE
+Workflow: ${{ github.workflow }}
+Runner: Ubuntu
+Watchdog: ACTIVE
+Heartbeat: ACTIVE
+Time: $(date)"
+
+
+            elif echo "$UPDATE" | grep -q '"/health"'; then
+
+              MSG="💚 HEALTH CHECK
+
+System: HEALTHY
+Bot Process: RUNNING
+Backup: ENABLED
+Auto Restart: ENABLED
+Time: $(date)"
+
+
+            else
+
               sleep 5
-            done
+              continue
+
+            fi
+
+
+            curl -s \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="$MSG"
+
+
+            ID=$(echo "$UPDATE" | grep -o '"update_id":[0-9]*' | tail -1 | cut -d: -f2)
+
+            if [ ! -z "$ID" ]; then
+              OFFSET=$((ID+1))
+            fi
+
+
+            sleep 5
+
+          done
+
+          ) &
+
+
+
+          (
+          while true
+          do
+
+            sleep 1800
+
+            curl -s \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="💓 HEARTBEAT
+
+BOT masih aktif
+Workflow: ${{ github.workflow }}
+Time: $(date)"
+
+          done
+
+          ) &
+
+
+
+      - name: "7. Run Bot (5 Jam + Watchdog)"
+        run: |
+
+          timeout 5h bash -c '
+
+          while true
+          do
+
+            echo "Menjalankan Bot..."
+
+            npm start
+
+
+            curl -s \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="⚠️ BOT RESTART
+
+Bot berhenti.
+Watchdog aktif.
+Restart otomatis."
+
+
+            sleep 5
+
+          done
+
           ' || true
 
-      - name: "7. Auto-Backup Session & File"
+
+
+      - name: "8. Cleanup Log"
         if: always()
         run: |
+
+          find . -name "*.log" -type f -mtime +7 -delete || true
+
+
+
+      - name: "9. Auto-Backup Session & File"
+        if: always()
+        run: |
+
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           mkdir -p storage/session
 
           git add -A
+
           git reset HEAD node_modules 2>/dev/null || true
 
+
           if git diff --cached --quiet; then
+
             echo "Tidak ada perubahan file."
+
           else
-            echo "Commit backup..."
 
             git commit -m "Auto-backup data bot (5 jam) [skip ci]"
 
             git pull --rebase origin main || true
 
             git push origin HEAD:main
+
           fi
 
-      - name: "8. Auto-Up (Trigger Siklus Berikutnya)"
+
+
+      - name: "10. Auto-Up Trigger Siklus Berikutnya"
         if: ${{ !cancelled() }}
+
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+
         run: |
-          echo "Memicu workflow berikutnya..."
 
           MAX_RETRY=20
           RETRY_DELAY=30
 
-          for ((i=1; i<=MAX_RETRY; i++)); do
-            echo "Percobaan ke-$i/$MAX_RETRY..."
 
-            if gh workflow run "${{ github.workflow }}" --ref main; then
-              echo "Workflow berhasil dipicu."
+          for ((i=1;i<=MAX_RETRY;i++))
+          do
+
+            if gh workflow run "${{ github.workflow }}" --ref main
+            then
+
+              curl -s \
+              "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+              -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+              -d text="🔄 Workflow baru berhasil dijalankan"
+
               exit 0
+
             fi
 
-            echo "Gagal. Tunggu ${RETRY_DELAY} detik..."
+
             sleep $RETRY_DELAY
+
           done
 
-          echo "Gagal memicu workflow setelah $MAX_RETRY percobaan."
+
+          curl -s \
+          "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+          -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+          -d text="❌ Gagal menjalankan workflow berikutnya"
+
+
           exit 1
