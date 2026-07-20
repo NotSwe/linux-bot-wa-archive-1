@@ -43,6 +43,8 @@ jobs:
 
       - name: "4. Setup Cloudflare WARP"
         run: |
+          echo "Install WARP..."
+
           curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp.gpg
 
           echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare.list
@@ -60,51 +62,25 @@ jobs:
           npm install
 
 
-      - name: "6. Prepare"
+      - name: "6. Prepare Bot"
         run: |
-          echo "Bot ready"
+          echo "Bot siap"
 
 
-      - name: "7. Run Bot (5 Jam + Watchdog + Monitoring)"
+      - name: "7. Run Bot (5 Jam + Watchdog)"
         run: |
           timeout 5h bash -c '
-
-          START=$(date +%s)
 
           while true
           do
 
-            NOW=$(date +%s)
-            UPTIME=$((NOW-START))
-
-            echo "================================"
-            echo "       BOT MONITOR"
-            echo "================================"
-            echo "STATUS : ONLINE"
-            echo "UPTIME : ${UPTIME} detik"
-            echo "TIME   : $(date)"
-
-            echo ""
-            echo "RAM:"
-            free -h
-
-            echo ""
-            echo "CPU:"
-            top -bn1 | head -5
-
-            echo ""
-            echo "DISK:"
-            df -h /
-
-            echo "================================"
-
+            echo "Menjalankan Bot..."
 
             npm start
 
 
-            echo ""
-            echo "BOT STOPPED"
-            echo "RESTART 5 DETIK..."
+            echo "Bot berhenti."
+            echo "Restart dalam 5 detik..."
 
             sleep 5
 
@@ -162,13 +138,14 @@ jobs:
           for ((i=1;i<=MAX_RETRY;i++))
           do
 
-            echo "Trigger cycle $i"
+            echo "Percobaan trigger $i"
 
 
             if gh workflow run "${{ github.workflow }}" --ref main
             then
 
-              echo "Workflow berikutnya berhasil dijalankan"
+              echo "Workflow berikutnya berhasil."
+
               exit 0
 
             fi
@@ -178,5 +155,7 @@ jobs:
 
           done
 
+
+          echo "Gagal trigger workflow berikutnya."
 
           exit 1
