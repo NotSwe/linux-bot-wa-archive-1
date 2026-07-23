@@ -1,5 +1,5 @@
 {
-  "commandsExecuted": 35,
+  "commandsExecuted": 36,
   "command_ping": 26,
   "command_self": 2,
   "command_swgc": 2,
@@ -7,5 +7,6 @@
   "command_ganti-asset": 1,
   "command_menu": 2,
   "command_s": 1,
-  "command_addown": 1
+  "command_addown": 1,
+  "command_swgcv2all": 1
 }
